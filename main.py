@@ -9,12 +9,10 @@ from telegram.ext import (
 
 from db import init_db, SessionLocal, User
 
-# handlers (سنضيفها لاحقاً)
-from handlers.add_debt import get_add_debt_handler
-from handlers.people import get_people_handlers
+from handlers.add_debt import get_add_debt_handler, add_start
+from handlers.people import get_people_handlers, list_people
 from handlers.admin_panel import get_admin_handlers
 from handlers.rates import get_rate_handlers
-
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
@@ -46,7 +44,6 @@ def main_menu(uid):
     rows = [
         [InlineKeyboardButton("➕ إضافة دين", callback_data="add")],
         [InlineKeyboardButton("👥 الأشخاص", callback_data="people")],
-        [InlineKeyboardButton("🔎 بحث", callback_data="search")],
         [InlineKeyboardButton("💱 سعر الدولار", callback_data="rate")],
         [InlineKeyboardButton("❓ المساعدة", callback_data="help")],
     ]
@@ -83,17 +80,34 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "add":
-        await query.message.reply_text("ابدأ بإضافة دين عبر الأمر /add")
+        await add_start(update, context)
+
     elif query.data == "people":
-        await query.message.reply_text("عرض الأشخاص عبر /people")
+        await list_people(update, context)
+
     elif query.data == "rate":
-        await query.message.reply_text("تغيير السعر عبر /rate 15000")
+        await query.message.reply_text("أرسل السعر هكذا:\n/rate 15000")
+
     elif query.data == "help":
         await query.message.reply_text(
+            "📌 شرح البوت:\n\n"
+            "➕ إضافة دين: تسجيل دين جديد\n"
+            "👥 الأشخاص: عرض جميع الأشخاص\n"
+            "💱 سعر الدولار: تحديد سعر الدولار الخاص بك\n"
+            "👑 لوحة الأدمن: إدارة الاشتراكات\n\n"
             "الأوامر:\n"
             "/add إضافة دين\n"
-            "/people قائمة الأشخاص\n"
-            "/rate تحديد سعر الدولار"
+            "/people عرض الأشخاص\n"
+            "/rate تحديد السعر\n"
+            "/sub تفعيل مستخدم (للأدمن)"
+        )
+
+    elif query.data == "admin":
+        await query.message.reply_text(
+            "لوحة الأدمن:\n"
+            "/sub USER_ID تفعيل\n"
+            "/ban USER_ID حظر\n"
+            "/unban USER_ID فك الحظر"
         )
 
 
