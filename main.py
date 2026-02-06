@@ -37,24 +37,15 @@ HELP_TEXT = (
     "يدعم عملتين: **USD** و **SYP**، وكل دين يُسجَّل **بعملة واحدة** تختارها أثناء الإضافة.\n\n"
     "### 💱 العملات والتحويل\n"
     "- الدين بالدولار يبقى **USD**.\n"
-    "- الدين بالليرة يبقى **SYP**.\n"
-    "- عند عرض الملخص/الملفات سيظهر إجمالي USD وإجمالي SYP + تحويل تقريبي حسب **آخر سعر محفوظ**.\n\n"
+    "- الدين بالليرة يبقى **SYP**.\n\n"
     "### 💱 سعر الدولار اليوم\n"
-    "تقدر تحدد السعر بطريقتين:\n"
     "- من الزر **💱 سعر الدولار** (محادثة مباشرة)\n"
-    "- أو بالأمر:\n"
-    "`/rate 15000`\n\n"
+    "- أو بالأمر: `/rate 15000`\n\n"
     "### ➕ إضافة دين\n"
-    "تقدر تضيف دين بطريقتين:\n"
     "- من الزر **➕ إضافة دين** (محادثة مباشرة)\n"
-    "- أو بالأمر:\n"
-    "`/add`\n\n"
+    "- أو بالأمر: `/add`\n\n"
     "### 👨‍💼 الأوامر\n"
-    "/start بدء البوت\n"
-    "/add إضافة دين\n"
-    "/people عرض الأشخاص\n"
-    "/rate تحديد سعر الدولار\n"
-    "/help المساعدة\n\n"
+    "/start /add /people /rate /help\n\n"
     "### 👑 الاشتراك\n"
     "هذا البوت **مدفوع** ولا يعمل بدون اشتراك فعّال.\n"
 )
@@ -77,7 +68,7 @@ def get_or_create_user(db, uid: int) -> User:
     if not user:
         user = User(
             tg_user_id=uid,
-            is_active=is_admin(uid),  # الأدمن يتفعل مباشرة
+            is_active=is_admin(uid),
             is_blocked=False,
         )
         db.add(user)
@@ -105,7 +96,7 @@ def check_access(uid: int) -> bool:
 
 
 # ---------------------------
-# محادثة إضافة دين (زر + /add)
+# محادثة إضافة دين
 # ---------------------------
 ADD_NAME, ADD_CURRENCY, ADD_AMOUNT = range(3)
 
@@ -192,10 +183,8 @@ async def add_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db = SessionLocal()
     try:
-        # تأكد المستخدم موجود لتفادي مشاكل FK
         get_or_create_user(db, uid)
 
-        # استخدم نفس الشخص إذا موجود
         person = db.query(Person).filter(Person.owner_user_id == uid, Person.name == name).first()
         if not person:
             person = Person(owner_user_id=uid, name=name)
@@ -213,15 +202,14 @@ async def add_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
 
         await update.message.reply_text(
-            f"✅ تمت إضافة الدين بنجاح:\n"
-            f"👤 {name}\n"
-            f"💰 {amount} {currency}",
+            f"✅ تمت إضافة الدين بنجاح:\n👤 {name}\n💰 {amount} {currency}",
             reply_markup=main_menu(uid),
         )
         return ConversationHandler.END
 
-    except Exception:
+    except Exception as e:
         db.rollback()
+        print("SAVE_DEBT_ERROR:", repr(e))  # مهم جداً لنعرف السبب الحقيقي باللوج
         await update.message.reply_text("❌ صار خطأ أثناء حفظ الدين. جرّب مرة ثانية.")
         return ConversationHandler.END
     finally:
@@ -246,22 +234,17 @@ def build_add_conversation() -> ConversationHandler:
 
 
 # ---------------------------
-# محادثة سعر الدولار (زر + /rate)
+# محادثة سعر الدولار
 # ---------------------------
 RATE_WAIT = 100
 
 
 async def rate_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    /rate
-    /rate 15000
-    """
     uid = update.effective_user.id
     if not check_access(uid):
         await update.effective_message.reply_text(PAID_MSG)
         return ConversationHandler.END
 
-    # إذا كتب /rate 15000
     if context.args:
         if len(context.args) != 1:
             await update.effective_message.reply_text("الاستخدام:\n/rate 15000")
@@ -281,15 +264,15 @@ async def rate_entry(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user.usd_rate = rate
             db.commit()
             await update.effective_message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate}")
-            return ConversationHandler.END
-        except Exception:
+        except Exception as e:
             db.rollback()
+            print("SAVE_RATE_ERROR:", repr(e))
             await update.effective_message.reply_text("❌ صار خطأ أثناء حفظ السعر. جرّب مرة ثانية.")
-            return ConversationHandler.END
         finally:
             db.close()
 
-    # /rate بدون رقم -> افتح محادثة
+        return ConversationHandler.END
+
     await update.effective_message.reply_text("💱 اكتب سعر الدولار الآن (مثال: 15000):")
     return RATE_WAIT
 
@@ -329,8 +312,9 @@ async def rate_save_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
         await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate}")
         return ConversationHandler.END
-    except Exception:
+    except Exception as e:
         db.rollback()
+        print("SAVE_RATE_ERROR:", repr(e))
         await update.message.reply_text("❌ صار خطأ أثناء حفظ السعر. جرّب مرة ثانية.")
         return ConversationHandler.END
     finally:
@@ -343,9 +327,7 @@ def build_rate_conversation() -> ConversationHandler:
             CommandHandler("rate", rate_entry),
             CallbackQueryHandler(rate_start_cb, pattern=r"^rate$"),
         ],
-        states={
-            RATE_WAIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, rate_save_msg)],
-        },
+        states={RATE_WAIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, rate_save_msg)]},
         fallbacks=[],
         allow_reentry=True,
         per_message=False,
@@ -358,7 +340,6 @@ def build_rate_conversation() -> ConversationHandler:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    # سجّل المستخدم دائماً
     db = SessionLocal()
     try:
         get_or_create_user(db, uid)
@@ -394,7 +375,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(PAID_MSG)
         return
 
-    # ملاحظة: add و rate ماسكينهم ConversationHandler (لا تلمسهم هون)
     if data == "people":
         await list_people(update, context)
 
@@ -405,63 +385,22 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not is_admin(uid):
             await query.message.reply_text("🚫 هذه اللوحة للأدمن فقط.")
             return
-
-        keyboard = [
-            [InlineKeyboardButton("تفعيل اشتراك", callback_data="admin_sub")],
-            [InlineKeyboardButton("تمديد اشتراك", callback_data="admin_extend")],
-            [InlineKeyboardButton("إلغاء اشتراك", callback_data="admin_cancel")],
-            [InlineKeyboardButton("حظر مستخدم", callback_data="admin_ban")],
-            [InlineKeyboardButton("فك الحظر", callback_data="admin_unban")],
-            [InlineKeyboardButton("رسالة جماعية", callback_data="admin_broadcast")],
-            [InlineKeyboardButton("المشتركين", callback_data="admin_subscribers")],
-            [InlineKeyboardButton("الإحصائيات", callback_data="admin_stats")],
-            [InlineKeyboardButton("رجوع", callback_data="back")],
-        ]
-        await query.message.reply_text(
-            "لوحة المشرف:",
-            reply_markup=InlineKeyboardMarkup(keyboard),
-        )
-
-    elif data == "back":
-        await query.message.reply_text("القائمة الرئيسية:", reply_markup=main_menu(uid))
-
-    # توجيه للأوامر (التنفيذ داخل admin_panel.py)
-    elif data == "admin_sub":
-        await query.message.reply_text("اكتب:\n/sub USER_ID DAYS\nمثال:\n/sub 123456 30")
-    elif data == "admin_extend":
-        await query.message.reply_text("اكتب:\n/extend USER_ID DAYS\nمثال:\n/extend 123456 30")
-    elif data == "admin_cancel":
-        await query.message.reply_text("اكتب:\n/cancel USER_ID\nمثال:\n/cancel 123456")
-    elif data == "admin_ban":
-        await query.message.reply_text("اكتب:\n/ban USER_ID\nمثال:\n/ban 123456")
-    elif data == "admin_unban":
-        await query.message.reply_text("اكتب:\n/unban USER_ID\nمثال:\n/unban 123456")
-    elif data == "admin_broadcast":
-        await query.message.reply_text("اكتب:\n/broadcast نص الرسالة")
-    elif data == "admin_subscribers":
-        await query.message.reply_text("اكتب:\n/subscribers")
-    elif data == "admin_stats":
-        await query.message.reply_text("اكتب:\n/stats")
+        await query.message.reply_text("لوحة المشرف جاهزة.")
 
 
 def main():
     init_db()
 
     app = Application.builder().token(TOKEN).build()
-    app.bot_data["ADMIN_IDS"] = list(ADMIN_IDS)
 
-    # أوامر عامة
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
 
-    # Conversations لازم قبل buttons
     app.add_handler(build_add_conversation())
     app.add_handler(build_rate_conversation())
 
-    # بقية الأزرار
     app.add_handler(CallbackQueryHandler(buttons))
 
-    # باقي الهاندلرز
     for h in get_people_handlers():
         app.add_handler(h)
 
