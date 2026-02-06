@@ -1,8 +1,8 @@
 import os
 from datetime import datetime, date
 from sqlalchemy import (
-    create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, Date, Numeric,
-    ForeignKey, Index, UniqueConstraint, Text
+    create_engine, Column, Integer, BigInteger, String, Boolean,
+    DateTime, Date, Numeric, ForeignKey, Index, UniqueConstraint, Text
 )
 from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
@@ -10,7 +10,7 @@ Base = declarative_base()
 
 
 def _normalize_db_url(url: str) -> str:
-    # Railway sometimes provides postgres:// ... SQLAlchemy expects postgresql://
+    # Railway sometimes provides postgres://; SQLAlchemy prefers postgresql://
     if url.startswith("postgres://"):
         return url.replace("postgres://", "postgresql://", 1)
     return url
@@ -22,13 +22,11 @@ if not DATABASE_URL:
 
 DATABASE_URL = _normalize_db_url(DATABASE_URL)
 
-# Railway Postgres usually requires SSL
-connect_args = {"sslmode": "require"}
-
+# Railway Postgres requires SSL
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    connect_args=connect_args,
+    connect_args={"sslmode": "require"},
 )
 
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -85,16 +83,13 @@ class Debt(Base):
     owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     person_id = Column(Integer, ForeignKey("people.id", ondelete="CASCADE"), nullable=False)
 
-    # amount & currency
-    # use Numeric for money
-    amount = Column(Numeric(18, 2), nullable=False)  # remaining amount
-    currency = Column(String(3), nullable=False)  # "USD" or "SYP"
+    amount = Column(Numeric(18, 2), nullable=False)
+    currency = Column(String(3), nullable=False)  # USD / SYP
 
-    # meta
-    title = Column(String(160), nullable=True)       # optional short description
-    note = Column(Text, nullable=True)               # optional note
-    due_date = Column(Date, nullable=True)           # optional due date
-    status = Column(String(20), default="OPEN", nullable=False)  # OPEN / PAID / CANCELED
+    title = Column(String(160), nullable=True)
+    note = Column(Text, nullable=True)
+    due_date = Column(Date, nullable=True)
+    status = Column(String(20), default="OPEN", nullable=False)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -106,8 +101,6 @@ class Debt(Base):
     __table_args__ = (
         Index("ix_debts_owner", "owner_user_id"),
         Index("ix_debts_person", "person_id"),
-        Index("ix_debts_due", "due_date"),
-        Index("ix_debts_status", "status"),
     )
 
 
@@ -118,16 +111,12 @@ class Payment(Base):
     debt_id = Column(Integer, ForeignKey("debts.id", ondelete="CASCADE"), nullable=False)
 
     amount = Column(Numeric(18, 2), nullable=False)
-    currency = Column(String(3), nullable=False)  # same logic: USD/SYP
+    currency = Column(String(3), nullable=False)
     note = Column(Text, nullable=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     debt = relationship("Debt", back_populates="payments")
-
-    __table_args__ = (
-        Index("ix_payments_debt", "debt_id"),
-    )
 
 
 class DailyRate(Base):
@@ -136,7 +125,6 @@ class DailyRate(Base):
     id = Column(Integer, primary_key=True)
     owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
 
-    # date rate applies to
     rate_date = Column(Date, nullable=False, default=date.today)
     usd_to_syp = Column(Numeric(18, 2), nullable=False)
 
@@ -147,23 +135,6 @@ class DailyRate(Base):
     __table_args__ = (
         UniqueConstraint("owner_user_id", "rate_date", name="uq_rate_owner_date"),
         Index("ix_rates_owner", "owner_user_id"),
-        Index("ix_rates_date", "rate_date"),
-    )
-
-
-class AuditLog(Base):
-    __tablename__ = "audit_logs"
-
-    id = Column(Integer, primary_key=True)
-    owner_user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True)
-
-    action = Column(String(80), nullable=False)   # e.g. SUB_ACTIVATE, BAN, ADD_DEBT, PAY_PARTIAL...
-    details = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    __table_args__ = (
-        Index("ix_audit_owner", "owner_user_id"),
-        Index("ix_audit_action", "action"),
     )
 
 
