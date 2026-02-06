@@ -6,15 +6,15 @@ from telegram.ext import (
     CommandHandler,
     CallbackQueryHandler,
     ContextTypes,
-    ConversationHandler,
-    MessageHandler,
-    filters,
 )
 
-from db import init_db, SessionLocal, User, Person, Debt
+from db import init_db, SessionLocal, User
 
+# handlers
 from handlers.people import get_people_handlers
 from handlers.admin_panel import get_admin_handlers
+from handlers.add_debt import build_add_conversation      # ← التعديل المهم
+from handlers.rate import build_rate_conversation          # محادثة سعر الدولار
 
 TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
@@ -65,7 +65,6 @@ def main_menu(uid: int) -> InlineKeyboardMarkup:
         [InlineKeyboardButton("👥 الأشخاص", callback_data="people")],
         [InlineKeyboardButton("💱 سعر الدولار", callback_data="rate")],
         [InlineKeyboardButton("❓ المساعدة", callback_data="help")],
-        [InlineKeyboardButton("❌ إلغاء العملية", callback_data="cancel_global")],
     ]
     if is_admin(uid):
         rows.append([InlineKeyboardButton("👑 لوحة المشرف", callback_data="admin")])
@@ -79,15 +78,14 @@ PAID_MSG = (
 )
 
 HELP_TEXT = (
-    "📌 المساعدة — بوت إدارة الديون\n\n"
-    "هذا البوت يساعدك على إدارة الديون بسهولة بعملتين:\n"
-    "USD و SYP.\n\n"
-    "يمكنك إضافة ديون، متابعة الأشخاص، تسديد الديون أو حذفها، "
-    "ويتم حساب التحويل التقريبي بين العملات حسب آخر سعر دولار محفوظ داخل البوت."
+    "❓ المساعدة\n\n"
+    "• ➕ إضافة دين: لإضافة دين جديد\n"
+    "• 👥 الأشخاص: عرض الأشخاص والديون الخاصة بهم\n"
+    "• 💱 سعر الدولار: تحديد سعر الدولار للتحويل التلقائي\n"
 )
 
 # ---------------------------
-# أزرار عامة
+# start
 # ---------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -103,7 +101,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "✅ أهلاً بك في بوت إدارة الديون (Premium)\nاختر من القائمة:",
+        "✅ أهلاً بك في بوت إدارة الديون",
         reply_markup=main_menu(uid),
     )
 
@@ -116,6 +114,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(HELP_TEXT)
 
 
+# ---------------------------
+# buttons
+# ---------------------------
+
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     await q.answer()
@@ -127,27 +129,17 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await q.message.reply_text(PAID_MSG)
         return
 
-    # لا نمسك add ولا people ولا rate (محادثات أخرى تمسكهم)
     if data == "help":
-        await q.edit_message_text(
-            HELP_TEXT,
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("🏠 رجوع للقائمة", callback_data="back_main")]
-            ]),
-        )
-
-    elif data == "cancel_global":
-        context.user_data.clear()
-        await q.edit_message_text(
-            "تم إلغاء العملية.",
-            reply_markup=main_menu(uid),
-        )
+        await q.edit_message_text(HELP_TEXT, reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🏠 رجوع للقائمة", callback_data="back_main")]
+        ]))
 
     elif data == "back_main":
         await q.edit_message_text("القائمة الرئيسية:", reply_markup=main_menu(uid))
 
     elif data == "admin":
         if not is_admin(uid):
+            await q.message.reply_text("🚫 هذه اللوحة للأدمن فقط.")
             return
 
         keyboard = [
@@ -165,7 +157,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # ---------------------------
-# تشغيل
+# main
 # ---------------------------
 
 def main():
@@ -175,15 +167,15 @@ def main():
     app.add_handler(CommandHandler("start", start), group=0)
     app.add_handler(CommandHandler("help", help_cmd), group=0)
 
-    # محادثات أولاً
+    # المحادثات أولاً
     app.add_handler(build_add_conversation(), group=0)
     app.add_handler(build_rate_conversation(), group=0)
 
-    # people
+    # people handlers
     for h in get_people_handlers():
         app.add_handler(h, group=1)
 
-    # أزرار عامة
+    # buttons العامة
     app.add_handler(CallbackQueryHandler(buttons), group=2)
 
     # admin
