@@ -13,7 +13,8 @@ ASK_NAME, ASK_AMOUNT = range(2)
 
 
 async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("اكتب اسم الشخص:")
+    msg = update.message or update.callback_query.message
+    await msg.reply_text("اكتب اسم الشخص:")
     return ASK_NAME
 
 
@@ -25,7 +26,12 @@ async def ask_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = context.user_data["person_name"]
-    amount = update.message.text
+
+    try:
+        amount = float(update.message.text)
+    except ValueError:
+        await update.message.reply_text("اكتب رقم صحيح")
+        return ASK_AMOUNT
 
     db = SessionLocal()
 
@@ -47,7 +53,7 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.commit()
     db.close()
 
-    await update.message.reply_text("تمت إضافة الدين بنجاح")
+    await update.message.reply_text("✅ تمت إضافة الدين بنجاح")
     return ConversationHandler.END
 
 
