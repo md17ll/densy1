@@ -40,15 +40,12 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
 
-    # Telegram ID كبير -> لازم BigInteger
     tg_user_id = Column(BigInteger, primary_key=True, index=True)
 
     is_active = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
 
     usd_rate = Column(Float, nullable=True)
-
-    # انتهاء الاشتراك
     sub_expires_at = Column(DateTime(timezone=False), nullable=True)
 
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
@@ -62,7 +59,6 @@ class Person(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    # FK الصحيح: على tg_user_id
     owner_user_id = Column(
         BigInteger,
         ForeignKey("users.tg_user_id", ondelete="CASCADE"),
@@ -71,7 +67,6 @@ class Person(Base):
     )
     name = Column(String(120), nullable=False)
 
-    # مهم جداً: default + not null
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
     owner = relationship("User", back_populates="people")
@@ -99,6 +94,10 @@ class Debt(Base):
     amount = Column(Float, nullable=False)
     currency = Column(String(3), nullable=False)  # USD / SYP
 
+    # ✅ هذا اللي ناقص عندك (حسب اللوج): عمود status NOT NULL
+    # نعطيه default حتى ما يعود يفشل الإدخال
+    status = Column(String(20), nullable=False, server_default=text("'open'"))
+
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
     owner = relationship("User", back_populates="debts")
@@ -108,7 +107,7 @@ class Debt(Base):
 def _patch_old_schema_for_postgres():
     """
     يرقّع الجداول القديمة إذا كانت موجودة (Postgres فقط).
-    مهم لأن create_all ما يعدّل الجداول الموجودة.
+    لأن create_all ما يعدّل الجداول الموجودة.
     """
     if "postgresql" not in DATABASE_URL:
         return
@@ -116,18 +115,17 @@ def _patch_old_schema_for_postgres():
     patch_sql = r"""
     DO $$
     BEGIN
-        -- people.created_at default
+        -- people.created_at
         IF EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_name='people' AND column_name='created_at'
         ) THEN
             EXECUTE 'ALTER TABLE people ALTER COLUMN created_at SET DEFAULT now()';
-            -- إذا فيه صفوف قديمة null (احتياط)
             EXECUTE 'UPDATE people SET created_at = now() WHERE created_at IS NULL';
             EXECUTE 'ALTER TABLE people ALTER COLUMN created_at SET NOT NULL';
         END IF;
 
-        -- debts.created_at default
+        -- debts.created_at
         IF EXISTS (
             SELECT 1 FROM information_schema.columns
             WHERE table_name='debts' AND column_name='created_at'
@@ -137,22 +135,27 @@ def _patch_old_schema_for_postgres():
             EXECUTE 'ALTER TABLE debts ALTER COLUMN created_at SET NOT NULL';
         END IF;
 
-        -- تأكيد FK owner_user_id -> users(tg_user_id)
-        -- نحذف أي FK قديم على people.owner_user_id (إذا كان موجود)
-        PERFORM 1 FROM pg_constraint c
-        JOIN pg_class t ON t.oid = c.conrelid
-        WHERE t.relname = 'people' AND c.contype='f';
+        -- ✅ debts.status (إذا موجود بدون default/فيه NULL) أو إذا غير موجود نضيفه
+        IF EXISTS (
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name='debts' AND column_name='status'
+        ) THEN
+            EXECUTE 'ALTER TABLE debts ALTER COLUMN status SET DEFAULT ''open''';
+            EXECUTE 'UPDATE debts SET status = ''open'' WHERE status IS NULL';
+            EXECUTE 'ALTER TABLE debts ALTER COLUMN status SET NOT NULL';
+        ELSE
+            EXECUTE 'ALTER TABLE debts ADD COLUMN status varchar(20) NOT NULL DEFAULT ''open''';
+        END IF;
 
-        -- حذف أي FK قديم مرتبط بالعمود owner_user_id (اسم الكونسترينت غير معروف)
+        -- FK people.owner_user_id -> users(tg_user_id)
         EXECUTE (
-          SELECT string_agg('ALTER TABLE people DROP CONSTRAINT '||quote_ident(c.conname)||';', ' ')
+          SELECT COALESCE(string_agg('ALTER TABLE people DROP CONSTRAINT '||quote_ident(c.conname)||';', ' '), '')
           FROM pg_constraint c
           JOIN pg_class t ON t.oid = c.conrelid
           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
           WHERE t.relname='people' AND c.contype='f' AND a.attname='owner_user_id'
         );
 
-        -- إعادة إضافة FK الصحيح إذا مو موجود
         IF NOT EXISTS (
           SELECT 1
           FROM pg_constraint c
@@ -166,9 +169,9 @@ def _patch_old_schema_for_postgres():
                    ON DELETE CASCADE';
         END IF;
 
-        -- debts.owner_user_id FK (نفس الفكرة)
+        -- FK debts.owner_user_id -> users(tg_user_id)
         EXECUTE (
-          SELECT string_agg('ALTER TABLE debts DROP CONSTRAINT '||quote_ident(c.conname)||';', ' ')
+          SELECT COALESCE(string_agg('ALTER TABLE debts DROP CONSTRAINT '||quote_ident(c.conname)||';', ' '), '')
           FROM pg_constraint c
           JOIN pg_class t ON t.oid = c.conrelid
           JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(c.conkey)
@@ -189,7 +192,6 @@ def _patch_old_schema_for_postgres():
         END IF;
 
     EXCEPTION WHEN others THEN
-        -- ما نكسر تشغيل البوت إذا فشل الترقيع لأي سبب
         NULL;
     END $$;
     """
