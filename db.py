@@ -11,7 +11,6 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
-    func,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -38,6 +37,10 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
 
+def _now():
+    return datetime.utcnow()
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -49,10 +52,11 @@ class User(Base):
 
     usd_rate = Column(Float, nullable=True)
 
-    # (اختياري للمستقبل) انتهاء الاشتراك
+    # انتهاء الاشتراك (اختياري)
     sub_expires_at = Column(DateTime(timezone=False), nullable=True)
 
-    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
 
     people = relationship("Person", back_populates="owner", cascade="all, delete-orphan")
     debts = relationship("Debt", back_populates="owner", cascade="all, delete-orphan")
@@ -71,7 +75,8 @@ class Person(Base):
     )
     name = Column(String(120), nullable=False)
 
-    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
 
     owner = relationship("User", back_populates="people")
     debts = relationship("Debt", back_populates="person", cascade="all, delete-orphan")
@@ -98,10 +103,11 @@ class Debt(Base):
     amount = Column(Float, nullable=False)
     currency = Column(String(3), nullable=False)  # USD / SYP
 
-    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    # مهم جداً: بعض قواعدك القديمة فيها status NOT NULL
+    status = Column(String(20), default="open", nullable=False)  # open / paid / partial ...
 
-    # ✅ هذا هو الحل لمشكلتك: قاعدة البيانات عندك NOT NULL
-    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
 
     owner = relationship("User", back_populates="debts")
     person = relationship("Person", back_populates="debts")
