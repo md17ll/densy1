@@ -74,45 +74,56 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     uid = query.from_user.id
+    data = query.data
 
     if not check_access(uid):
         await query.message.reply_text("🔒 اشتراكك غير مفعل")
         return
 
-    if query.data == "add":
+    if data == "add":
         await query.message.reply_text("ابدأ إضافة دين عبر الأمر:\n/add")
 
-    elif query.data == "people":
+    elif data == "people":
         await list_people(update, context)
 
-    elif query.data == "rate":
+    elif data == "rate":
         await query.message.reply_text("أرسل السعر هكذا:\n/rate 15000")
 
-    elif query.data == "help":
+    elif data == "help":
         await query.message.reply_text(
             "📌 شرح البوت:\n\n"
-            "➕ إضافة دين: تسجيل دين جديد\n"
-            "👥 الأشخاص: عرض جميع الأشخاص\n"
-            "💱 سعر الدولار: تحديد سعر الدولار الخاص بك\n"
-            "👑 لوحة الأدمن: إدارة الاشتراكات\n\n"
-            "الأوامر:\n"
             "/add إضافة دين\n"
             "/people عرض الأشخاص\n"
-            "/rate تحديد السعر\n"
-            "/sub تفعيل مستخدم (للأدمن)"
+            "/rate تحديد سعر الدولار\n"
         )
 
-    elif query.data == "admin":
+    elif data == "admin":
         keyboard = [
             [InlineKeyboardButton("تفعيل اشتراك", callback_data="admin_sub")],
             [InlineKeyboardButton("حظر مستخدم", callback_data="admin_ban")],
             [InlineKeyboardButton("فك حظر", callback_data="admin_unban")],
+            [InlineKeyboardButton("إحصائيات", callback_data="admin_stats")],
+            [InlineKeyboardButton("إرسال للجميع", callback_data="admin_broadcast")],
         ]
-
         await query.message.reply_text(
             "لوحة المشرف:",
             reply_markup=InlineKeyboardMarkup(keyboard),
         )
+
+    elif data == "admin_sub":
+        await query.message.reply_text("اكتب:\n/sub USER_ID")
+
+    elif data == "admin_ban":
+        await query.message.reply_text("اكتب:\n/ban USER_ID")
+
+    elif data == "admin_unban":
+        await query.message.reply_text("اكتب:\n/unban USER_ID")
+
+    elif data == "admin_stats":
+        await query.message.reply_text("ميزة الإحصائيات سيتم تفعيلها لاحقاً")
+
+    elif data == "admin_broadcast":
+        await query.message.reply_text("ميزة الإرسال الجماعي سيتم تفعيلها لاحقاً")
 
 
 def main():
