@@ -1,13 +1,12 @@
 import os
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
-
 from db import SessionLocal, User
 
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
 
 
-def is_admin(uid: int) -> bool:
+def is_admin(uid: int):
     return uid in ADMIN_IDS
 
 
