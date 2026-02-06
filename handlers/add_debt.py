@@ -6,6 +6,7 @@ from telegram.ext import (
     ConversationHandler,
     CommandHandler,
     MessageHandler,
+    CallbackQueryHandler,
     filters,
 )
 
@@ -21,33 +22,14 @@ def _normalize_number(text: str) -> str:
     return text
 
 
-def _is_allowed(uid: int, admin_ids: set[int]) -> bool:
-    if uid in admin_ids:
-        return True
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.tg_user_id == uid).first()
-        if not user:
-            return False
-        if user.is_blocked:
-            return False
-        if not user.is_active:
-            return False
-        return True
-    finally:
-        db.close()
-
-
 async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    uid = update.effective_user.id
-    admin_ids = set(int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or []))
+    msg = update.message or (update.callback_query.message if update.callback_query else None)
+    if update.callback_query:
+        await update.callback_query.answer()
 
-    if not _is_allowed(uid, admin_ids):
-        msg = update.message or update.callback_query.message
-        await msg.reply_text("🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك.")
+    if not msg:
         return ConversationHandler.END
 
-    msg = update.message or update.callback_query.message
     await msg.reply_text("اكتب اسم الشخص:")
     return ASK_NAME
 
@@ -60,12 +42,6 @@ async def ask_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    admin_ids = set(int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or []))
-
-    if not _is_allowed(uid, admin_ids):
-        await update.message.reply_text("🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك.")
-        return ConversationHandler.END
-
     name = (context.user_data.get("person_name") or "").strip()
     raw_amount = update.message.text or ""
 
@@ -80,7 +56,7 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db = SessionLocal()
     try:
-        person = Person(owner_user_id=uid, name=name)  # created_at default
+        person = Person(owner_user_id=uid, name=name)
         db.add(person)
         db.commit()
         db.refresh(person)
@@ -90,6 +66,8 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             person_id=person.id,
             amount=amount,
             currency="USD",
+            note=None,
+            due_date=None,
         )
         db.add(debt)
         db.commit()
@@ -106,12 +84,21 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 
+async def cancel_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ تم إلغاء الإضافة.")
+    return ConversationHandler.END
+
+
 def get_add_debt_handler():
     return ConversationHandler(
-        entry_points=[CommandHandler("add", add_start)],
+        entry_points=[
+            CommandHandler("add", add_start),
+            CallbackQueryHandler(add_start, pattern="^add$"),
+        ],
         states={
             ASK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_amount)],
             ASK_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, save_debt)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", cancel_add)],
+        allow_reentry=True,
     )
