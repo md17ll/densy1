@@ -6,11 +6,16 @@ from db import SessionLocal, User
 async def set_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
+    # تحقق من وجود رقم
     if len(context.args) != 1:
         await update.message.reply_text("الاستخدام:\n/rate 15000")
         return
 
-    rate = float(context.args[0])
+    try:
+        rate = float(context.args[0])
+    except ValueError:
+        await update.message.reply_text("اكتب رقم صحيح")
+        return
 
     db = SessionLocal()
     user = db.query(User).filter(User.tg_user_id == uid).first()
@@ -27,4 +32,7 @@ async def set_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def get_rate_handlers():
-    return [CommandHandler("rate", set_rate)]
+    return [
+        CommandHandler("rate", set_rate),
+    ]
+```0
