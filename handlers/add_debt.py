@@ -1,3 +1,5 @@
+from decimal import Decimal, InvalidOperation
+
 from telegram import Update
 from telegram.ext import (
     ContextTypes,
@@ -13,7 +15,6 @@ ASK_NAME, ASK_AMOUNT = range(2)
 
 
 def _normalize_number(text: str) -> str:
-    # تحويل أرقام عربية إلى إنجليزية + إزالة الفواصل والمسافات
     arabic_digits = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
     text = (text or "").strip().translate(arabic_digits)
     text = text.replace(",", "").replace(" ", "")
@@ -39,7 +40,7 @@ def _is_allowed(uid: int, admin_ids: set[int]) -> bool:
 
 async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    admin_ids = {int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or [])}
+    admin_ids = set(int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or []))
 
     if not _is_allowed(uid, admin_ids):
         msg = update.message or update.callback_query.message
@@ -53,13 +54,13 @@ async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["person_name"] = (update.message.text or "").strip()
-    await update.message.reply_text("اكتب المبلغ (مثال: 1500 أو 1,500):")
+    await update.message.reply_text("اكتب المبلغ (مثال: 1500 أو 1,500 أو ١٥٠٠):")
     return ASK_AMOUNT
 
 
 async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
-    admin_ids = {int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or [])}
+    admin_ids = set(int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or []))
 
     if not _is_allowed(uid, admin_ids):
         await update.message.reply_text("🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك.")
@@ -70,33 +71,35 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         normalized = _normalize_number(raw_amount)
-        amount = float(normalized)
+        amount = Decimal(normalized)
         if amount <= 0:
-            raise ValueError
-    except ValueError:
+            raise InvalidOperation
+    except (InvalidOperation, ValueError):
         await update.message.reply_text("❌ اكتب رقم صحيح أكبر من 0 (مثال: 1500)")
         return ASK_AMOUNT
 
     db = SessionLocal()
     try:
-        # أنشئ/احفظ الشخص (حالياً: كل إضافة تُنشئ سجل جديد للشخص)
+        # إنشاء الشخص
         person = Person(owner_user_id=uid, name=name)
         db.add(person)
         db.commit()
         db.refresh(person)
 
-        # احفظ الدين
+        # إنشاء الدين
         debt = Debt(
             owner_user_id=uid,
             person_id=person.id,
-            amount=amount,
+            amount=amount,       # Decimal مناسب لـ NUMERIC
             currency="USD",
         )
         db.add(debt)
         db.commit()
 
-    except Exception:
+    except Exception as e:
         db.rollback()
+        # حتى نعرف السبب الحقيقي بالـ Logs
+        print("SAVE_DEBT_ERROR:", repr(e))
         await update.message.reply_text("❌ صار خطأ أثناء حفظ الدين. جرّب مرة ثانية.")
         return ConversationHandler.END
     finally:
