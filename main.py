@@ -9,7 +9,7 @@ from telegram.ext import (
 
 from db import init_db, SessionLocal, User
 
-from handlers.add_debt import get_add_debt_handler, add_start
+from handlers.add_debt import get_add_debt_handler
 from handlers.people import get_people_handlers, list_people
 from handlers.admin_panel import get_admin_handlers
 from handlers.rates import get_rate_handlers
@@ -80,7 +80,7 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "add":
-        await add_start(update, context)
+        await query.message.reply_text("ابدأ إضافة دين عبر الأمر:\n/add")
 
     elif query.data == "people":
         await list_people(update, context)
@@ -103,11 +103,15 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif query.data == "admin":
+        keyboard = [
+            [InlineKeyboardButton("تفعيل اشتراك", callback_data="admin_sub")],
+            [InlineKeyboardButton("حظر مستخدم", callback_data="admin_ban")],
+            [InlineKeyboardButton("فك حظر", callback_data="admin_unban")],
+        ]
+
         await query.message.reply_text(
-            "لوحة الأدمن:\n"
-            "/sub USER_ID تفعيل\n"
-            "/ban USER_ID حظر\n"
-            "/unban USER_ID فك الحظر"
+            "لوحة المشرف:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
         )
 
 
