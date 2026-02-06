@@ -1,5 +1,13 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import (
+    ContextTypes,
+    ConversationHandler,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    filters,
+)
+
 from db import SessionLocal, Person, Debt
 from datetime import datetime
 
@@ -35,7 +43,7 @@ async def ask_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     context.user_data["currency"] = query.data
-    await query.message.reply_text("اكتب تاريخ السداد (YYYY-MM-DD) أو اكتب 0 للتخطي:")
+    await query.message.reply_text("اكتب تاريخ السداد (YYYY-MM-DD) أو 0 للتخطي:")
     return ASK_DATE
 
 
