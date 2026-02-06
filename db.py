@@ -1,33 +1,62 @@
 import os
-from sqlalchemy import create_engine,Column,Integer,BigInteger,String,Boolean,Numeric
-from sqlalchemy.orm import declarative_base,sessionmaker
+from datetime import datetime
+from sqlalchemy import (
+    create_engine,
+    Column,
+    Integer,
+    BigInteger,
+    String,
+    Boolean,
+    DateTime,
+    Numeric,
+    ForeignKey,
+    Text,
+)
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-Base=declarative_base()
+Base = declarative_base()
 
-DATABASE_URL=os.getenv("DATABASE_URL").replace("postgres://","postgresql://",1)
-engine=create_engine(DATABASE_URL)
-SessionLocal=sessionmaker(bind=engine)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+# ---------------- USERS ----------------
 class User(Base):
-    __tablename__="users"
-    id=Column(Integer,primary_key=True)
-    tg_user_id=Column(BigInteger,unique=True)
-    is_active=Column(Boolean,default=False)
-    usd_rate=Column(Numeric,default=0)
+    __tablename__ = "users"
 
+    id = Column(Integer, primary_key=True)
+    tg_user_id = Column(BigInteger, unique=True, index=True)
+    is_active = Column(Boolean, default=False)
+    is_blocked = Column(Boolean, default=False)
+    usd_rate = Column(Numeric(18, 2), default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------- PEOPLE ----------------
 class Person(Base):
-    __tablename__="people"
-    id=Column(Integer,primary_key=True)
-    owner_user_id=Column(BigInteger)
-    name=Column(String)
+    __tablename__ = "people"
 
+    id = Column(Integer, primary_key=True)
+    owner_user_id = Column(BigInteger, index=True)
+    name = Column(String(255))
+
+
+# ---------------- DEBTS ----------------
 class Debt(Base):
-    __tablename__="debts"
-    id=Column(Integer,primary_key=True)
-    owner_user_id=Column(BigInteger)
-    person_id=Column(Integer)
-    amount=Column(Numeric)
-    currency=Column(String)
+    __tablename__ = "debts"
+
+    id = Column(Integer, primary_key=True)
+    owner_user_id = Column(BigInteger, index=True)
+    person_id = Column(Integer, ForeignKey("people.id"))
+    amount = Column(Numeric(18, 2))
+    currency = Column(String(3))  # USD / SYP
+    note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 
 def init_db():
-    Base.metadata.create_all(engine)
+    Base.metadata.create_all(bind=engine)
