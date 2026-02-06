@@ -7,51 +7,100 @@ from telegram.ext import (
     filters,
 )
 
-from db import SessionLocal, Person, Debt
+from db import SessionLocal, User, Person, Debt
 
 ASK_NAME, ASK_AMOUNT = range(2)
 
 
+def _normalize_number(text: str) -> str:
+    # تحويل أرقام عربية إلى إنجليزية + إزالة الفواصل والمسافات
+    arabic_digits = str.maketrans("٠١٢٣٤٥٦٧٨٩", "0123456789")
+    text = (text or "").strip().translate(arabic_digits)
+    text = text.replace(",", "").replace(" ", "")
+    return text
+
+
+def _is_allowed(uid: int, admin_ids: set[int]) -> bool:
+    if uid in admin_ids:
+        return True
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.tg_user_id == uid).first()
+        if not user:
+            return False
+        if user.is_blocked:
+            return False
+        if not user.is_active:
+            return False
+        return True
+    finally:
+        db.close()
+
+
 async def add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    admin_ids = {int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or [])}
+
+    if not _is_allowed(uid, admin_ids):
+        msg = update.message or update.callback_query.message
+        await msg.reply_text("🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك.")
+        return ConversationHandler.END
+
     msg = update.message or update.callback_query.message
     await msg.reply_text("اكتب اسم الشخص:")
     return ASK_NAME
 
 
 async def ask_amount(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    context.user_data["person_name"] = update.message.text
-    await update.message.reply_text("اكتب المبلغ:")
+    context.user_data["person_name"] = (update.message.text or "").strip()
+    await update.message.reply_text("اكتب المبلغ (مثال: 1500 أو 1,500):")
     return ASK_AMOUNT
 
 
 async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    name = context.user_data["person_name"]
+    uid = update.effective_user.id
+    admin_ids = {int(x) for x in (context.bot_data.get("ADMIN_IDS", []) or [])}
+
+    if not _is_allowed(uid, admin_ids):
+        await update.message.reply_text("🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك.")
+        return ConversationHandler.END
+
+    name = (context.user_data.get("person_name") or "").strip()
+    raw_amount = update.message.text or ""
 
     try:
-        amount = float(update.message.text)
+        normalized = _normalize_number(raw_amount)
+        amount = float(normalized)
+        if amount <= 0:
+            raise ValueError
     except ValueError:
-        await update.message.reply_text("اكتب رقم صحيح")
+        await update.message.reply_text("❌ اكتب رقم صحيح أكبر من 0 (مثال: 1500)")
         return ASK_AMOUNT
 
     db = SessionLocal()
+    try:
+        # أنشئ/احفظ الشخص (حالياً: كل إضافة تُنشئ سجل جديد للشخص)
+        person = Person(owner_user_id=uid, name=name)
+        db.add(person)
+        db.commit()
+        db.refresh(person)
 
-    person = Person(
-        owner_user_id=update.effective_user.id,
-        name=name,
-    )
-    db.add(person)
-    db.commit()
-    db.refresh(person)
+        # احفظ الدين
+        debt = Debt(
+            owner_user_id=uid,
+            person_id=person.id,
+            amount=amount,
+            currency="USD",
+        )
+        db.add(debt)
+        db.commit()
 
-    debt = Debt(
-        owner_user_id=update.effective_user.id,
-        person_id=person.id,
-        amount=amount,
-        currency="USD",
-    )
-    db.add(debt)
-    db.commit()
-    db.close()
+    except Exception:
+        db.rollback()
+        await update.message.reply_text("❌ صار خطأ أثناء حفظ الدين. جرّب مرة ثانية.")
+        return ConversationHandler.END
+    finally:
+        db.close()
 
     await update.message.reply_text("✅ تمت إضافة الدين بنجاح")
     return ConversationHandler.END
