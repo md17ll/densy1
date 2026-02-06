@@ -56,7 +56,6 @@ def set_subscription(tg_user_id: int, days: int) -> tuple[bool, str]:
             db.refresh(user)
 
         now = datetime.utcnow()
-        # إذا عنده اشتراك شغال، مدد من تاريخ الانتهاء، وإلا من الآن
         base = user.sub_expires_at if user.sub_expires_at and user.sub_expires_at > now else now
         user.sub_expires_at = base + timedelta(days=days)
         user.is_active = True
@@ -100,6 +99,13 @@ def check_access(tg_user_id: int) -> tuple[bool, str]:
     """
     returns (allowed, message_if_denied)
     """
+    # ✅ الأدمن مسموح له دائمًا (حتى بدون اشتراك)
+    if is_admin(tg_user_id):
+        user = get_or_create_user(tg_user_id)
+        if user.is_blocked:
+            return False, "🚫 تم حظرك من استخدام البوت."
+        return True, ""
+
     user = get_or_create_user(tg_user_id)
 
     if user.is_blocked:
@@ -108,7 +114,6 @@ def check_access(tg_user_id: int) -> tuple[bool, str]:
     if not user.is_active or not user.sub_expires_at:
         return False, "🔒 هذا البوت مدفوع.\nلا يمكنك استخدامه بدون اشتراك فعّال.\n📩 تواصل مع الأدمن لتفعيل اشتراكك."
 
-    # انتهاء الاشتراك
     if user.sub_expires_at <= datetime.utcnow():
         return False, "⛔ اشتراكك منتهي.\n📩 تواصل مع الأدمن لتجديد الاشتراك."
 
@@ -124,19 +129,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not allowed:
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📩 تواصل مع الأدمن", url="https://t.me/")]  # ضع يوزر الأدمن لاحقًا
+            [InlineKeyboardButton("📩 تواصل مع الأدمن", url="https://t.me/")]  # ضع يوزرك لاحقًا
         ])
         await update.message.reply_text(msg, reply_markup=kb)
         return
 
-    # القائمة الرئيسية (مؤقتًا نص)
     await update.message.reply_text(
-        "✅ أهلاً بك في بوت الديون (Premium)\n"
-        "القائمة الرئيسية قريبًا:\n"
+        "✅ أهلاً بك في بوت الديون (Premium)\n\n"
+        "القائمة الرئيسية (قريبًا بالأزرار):\n"
         "➕ إضافة دين\n"
         "📋 قائمة الديون\n"
         "📊 الملخص\n"
-        "❓ المساعدة"
+        "❓ المساعدة\n\n"
+        "جرّب /help"
     )
 
 
@@ -152,18 +157,21 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "❓ المساعدة – دليل استخدام بوت الديون\n\n"
         "✅ فكرة البوت:\n"
         "يسجل ديون الأشخاص بعملتين (USD / SYP) ويعرض إجمالي كل عملة مع تحويل تقريبي حسب سعر الدولار اليوم.\n\n"
-        "💱 سعر الدولار اليوم:\n"
-        "استخدم /rate لإدخال سعر اليوم يدويًا، وإذا لم تدخل سعر اليوم سيستخدم آخر سعر محفوظ.\n\n"
         "🧾 الأوامر:\n"
         "/start - تشغيل البوت\n"
-        "/add - إضافة دين\n"
-        "/list - قائمة الديون\n"
-        "/summary - الملخص\n"
-        "/rate - سعر الدولار اليوم\n"
-        "/export - تصدير CSV/Excel\n"
-        "/pin - حماية PIN\n"
+        "/add - إضافة دين (قريبًا)\n"
+        "/list - قائمة الديون (قريبًا)\n"
+        "/summary - الملخص (قريبًا)\n"
+        "/rate - سعر الدولار اليوم (قريبًا)\n"
+        "/export - تصدير CSV/Excel (قريبًا)\n"
+        "/pin - حماية PIN (قريبًا)\n"
         "/help - المساعدة\n"
     )
+
+
+async def myid_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    tg_id = update.effective_user.id
+    await update.message.reply_text(f"🆔 Your Telegram ID: `{tg_id}`", parse_mode="Markdown")
 
 
 # -----------------------
@@ -183,6 +191,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/ban <user_id>         حظر\n"
         "/unban <user_id>       فك حظر\n"
         "/who <user_id>         معلومات عن مستخدم\n"
+        "/myid                  عرض آيديك\n"
     )
 
 
@@ -199,7 +208,7 @@ async def sub_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = int(context.args[0])
         days = int(context.args[1])
-        ok, msg = set_subscription(user_id, days)
+        _, msg = set_subscription(user_id, days)
         await update.message.reply_text(msg)
     except ValueError:
         await update.message.reply_text("❌ تأكد أن user_id و days أرقام صحيحة.")
@@ -217,7 +226,7 @@ async def unsub_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         user_id = int(context.args[0])
-        ok, msg = cancel_subscription(user_id)
+        _, msg = cancel_subscription(user_id)
         await update.message.reply_text(msg)
     except ValueError:
         await update.message.reply_text("❌ user_id لازم يكون رقم.")
@@ -235,7 +244,7 @@ async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         user_id = int(context.args[0])
-        ok, msg = set_block(user_id, True)
+        _, msg = set_block(user_id, True)
         await update.message.reply_text(msg)
     except ValueError:
         await update.message.reply_text("❌ user_id لازم يكون رقم.")
@@ -253,7 +262,7 @@ async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         user_id = int(context.args[0])
-        ok, msg = set_block(user_id, False)
+        _, msg = set_block(user_id, False)
         await update.message.reply_text(msg)
     except ValueError:
         await update.message.reply_text("❌ user_id لازم يكون رقم.")
@@ -299,6 +308,7 @@ def main():
     # user
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_cmd))
+    app.add_handler(CommandHandler("myid", myid_cmd))
 
     # admin
     app.add_handler(CommandHandler("admin", admin_panel))
