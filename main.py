@@ -59,7 +59,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not check_access(uid):
         await update.message.reply_text(
-            "🔒 هذا البوت مدفوع.\nتواصل مع الأدمن لتفعيل الاشتراك."
+            "🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن لتفعيل الاشتراك."
         )
         return
 
@@ -74,14 +74,17 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     uid = query.from_user.id
-    data = query.data
 
     if not check_access(uid):
-        await query.message.reply_text("🔒 اشتراكك غير مفعل")
+        await query.message.reply_text(
+            "🔒 هذا البوت مدفوع.\nيرجى التواصل مع الأدمن."
+        )
         return
 
+    data = query.data
+
     if data == "add":
-        await query.message.reply_text("ابدأ إضافة دين عبر الأمر:\n/add")
+        await query.message.reply_text("اكتب /add لبدء إضافة الدين")
 
     elif data == "people":
         await list_people(update, context)
@@ -91,7 +94,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "help":
         await query.message.reply_text(
-            "📌 شرح البوت:\n\n"
             "/add إضافة دين\n"
             "/people عرض الأشخاص\n"
             "/rate تحديد سعر الدولار\n"
@@ -102,8 +104,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("تفعيل اشتراك", callback_data="admin_sub")],
             [InlineKeyboardButton("حظر مستخدم", callback_data="admin_ban")],
             [InlineKeyboardButton("فك حظر", callback_data="admin_unban")],
-            [InlineKeyboardButton("إحصائيات", callback_data="admin_stats")],
-            [InlineKeyboardButton("إرسال للجميع", callback_data="admin_broadcast")],
         ]
         await query.message.reply_text(
             "لوحة المشرف:",
@@ -118,12 +118,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif data == "admin_unban":
         await query.message.reply_text("اكتب:\n/unban USER_ID")
-
-    elif data == "admin_stats":
-        await query.message.reply_text("ميزة الإحصائيات سيتم تفعيلها لاحقاً")
-
-    elif data == "admin_broadcast":
-        await query.message.reply_text("ميزة الإرسال الجماعي سيتم تفعيلها لاحقاً")
 
 
 def main():
