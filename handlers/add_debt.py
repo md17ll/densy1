@@ -1,4 +1,5 @@
 from decimal import Decimal, InvalidOperation
+from datetime import datetime
 
 from telegram import Update
 from telegram.ext import (
@@ -80,17 +81,21 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db = SessionLocal()
     try:
-        # إنشاء الشخص
-        person = Person(owner_user_id=uid, name=name)
+        # ✅ إنشاء شخص مع created_at حتى لا يحدث NotNullViolation
+        person = Person(
+            owner_user_id=uid,
+            name=name,
+            created_at=datetime.utcnow(),
+        )
         db.add(person)
         db.commit()
         db.refresh(person)
 
-        # إنشاء الدين
+        # إنشاء دين
         debt = Debt(
             owner_user_id=uid,
             person_id=person.id,
-            amount=amount,       # Decimal مناسب لـ NUMERIC
+            amount=amount,
             currency="USD",
         )
         db.add(debt)
@@ -98,7 +103,6 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         db.rollback()
-        # حتى نعرف السبب الحقيقي بالـ Logs
         print("SAVE_DEBT_ERROR:", repr(e))
         await update.message.reply_text("❌ صار خطأ أثناء حفظ الدين. جرّب مرة ثانية.")
         return ConversationHandler.END
