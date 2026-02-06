@@ -1,76 +1,199 @@
-import os
+from datetime import datetime, timedelta
+
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
+
 from db import SessionLocal, User
 
-ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "").split(",") if x}
+
+def _is_admin(context: ContextTypes.DEFAULT_TYPE, uid: int) -> bool:
+    return uid in context.application.bot_data.get("ADMIN_IDS", [])
 
 
-def is_admin(uid: int):
-    return uid in ADMIN_IDS
-
-
-async def activate_sub(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
-        await update.message.reply_text("هذا الأمر للأدمن فقط")
+# -------------------
+# تفعيل اشتراك
+# /sub USER_ID DAYS
+# -------------------
+async def sub_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not _is_admin(context, uid):
         return
 
-    if len(context.args) != 1:
-        await update.message.reply_text("الاستخدام: /sub USER_ID")
+    if len(context.args) != 2:
+        await update.message.reply_text("الاستخدام:\n/sub USER_ID DAYS")
         return
 
-    uid = int(context.args[0])
+    user_id = int(context.args[0])
+    days = int(context.args[1])
 
     db = SessionLocal()
-    user = db.query(User).filter(User.tg_user_id == uid).first()
+    try:
+        user = db.query(User).filter(User.tg_user_id == user_id).first()
+        if not user:
+            user = User(tg_user_id=user_id)
 
-    if not user:
-        user = User(tg_user_id=uid, is_active=True)
-        db.add(user)
-    else:
         user.is_active = True
+        user.sub_expires_at = datetime.utcnow() + timedelta(days=days)
 
-    db.commit()
-    db.close()
+        db.add(user)
+        db.commit()
 
-    await update.message.reply_text("تم تفعيل الاشتراك")
+        await update.message.reply_text("✅ تم تفعيل الاشتراك")
+    finally:
+        db.close()
 
 
-async def block_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
+# -------------------
+# تمديد
+# -------------------
+async def extend_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not _is_admin(context, uid):
         return
 
-    uid = int(context.args[0])
+    if len(context.args) != 2:
+        await update.message.reply_text("الاستخدام:\n/extend USER_ID DAYS")
+        return
+
+    user_id = int(context.args[0])
+    days = int(context.args[1])
 
     db = SessionLocal()
-    user = db.query(User).filter(User.tg_user_id == uid).first()
-    if user:
+    try:
+        user = db.query(User).filter(User.tg_user_id == user_id).first()
+        if not user:
+            await update.message.reply_text("المستخدم غير موجود")
+            return
+
+        if not user.sub_expires_at:
+            user.sub_expires_at = datetime.utcnow()
+
+        user.sub_expires_at += timedelta(days=days)
+        db.commit()
+
+        await update.message.reply_text("✅ تم التمديد")
+    finally:
+        db.close()
+
+
+# -------------------
+# إلغاء اشتراك
+# -------------------
+async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+    if not _is_admin(context, uid):
+        return
+
+    user_id = int(context.args[0])
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.tg_user_id == user_id).first()
+        if not user:
+            return
+
+        user.is_active = False
+        db.commit()
+
+        await update.message.reply_text("❌ تم إلغاء الاشتراك")
+    finally:
+        db.close()
+
+
+# -------------------
+# حظر
+# -------------------
+async def ban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(context, update.effective_user.id):
+        return
+
+    user_id = int(context.args[0])
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.tg_user_id == user_id).first()
+        if not user:
+            return
+
         user.is_blocked = True
         db.commit()
-    db.close()
+        await update.message.reply_text("🚫 تم الحظر")
+    finally:
+        db.close()
 
-    await update.message.reply_text("تم حظر المستخدم")
 
-
-async def unblock_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not is_admin(update.effective_user.id):
+# -------------------
+# فك الحظر
+# -------------------
+async def unban_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(context, update.effective_user.id):
         return
 
-    uid = int(context.args[0])
+    user_id = int(context.args[0])
 
     db = SessionLocal()
-    user = db.query(User).filter(User.tg_user_id == uid).first()
-    if user:
+    try:
+        user = db.query(User).filter(User.tg_user_id == user_id).first()
+        if not user:
+            return
+
         user.is_blocked = False
         db.commit()
-    db.close()
+        await update.message.reply_text("✅ تم فك الحظر")
+    finally:
+        db.close()
 
-    await update.message.reply_text("تم فك الحظر")
+
+# -------------------
+# رسالة جماعية
+# -------------------
+async def broadcast_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(context, update.effective_user.id):
+        return
+
+    text = " ".join(context.args)
+
+    db = SessionLocal()
+    try:
+        users = db.query(User).all()
+    finally:
+        db.close()
+
+    for u in users:
+        try:
+            await context.bot.send_message(chat_id=u.tg_user_id, text=text)
+        except:
+            pass
+
+    await update.message.reply_text("📢 تم الإرسال")
+
+
+# -------------------
+# إحصائيات
+# -------------------
+async def stats_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not _is_admin(context, update.effective_user.id):
+        return
+
+    db = SessionLocal()
+    try:
+        total = db.query(User).count()
+        active = db.query(User).filter(User.is_active == True).count()
+    finally:
+        db.close()
+
+    await update.message.reply_text(
+        f"👥 المستخدمين: {total}\n⭐ المشتركين: {active}"
+    )
 
 
 def get_admin_handlers():
     return [
-        CommandHandler("sub", activate_sub),
-        CommandHandler("ban", block_user),
-        CommandHandler("unban", unblock_user),
+        CommandHandler("sub", sub_cmd),
+        CommandHandler("extend", extend_cmd),
+        CommandHandler("cancel", cancel_cmd),
+        CommandHandler("ban", ban_cmd),
+        CommandHandler("unban", unban_cmd),
+        CommandHandler("broadcast", broadcast_cmd),
+        CommandHandler("stats", stats_cmd),
     ]
