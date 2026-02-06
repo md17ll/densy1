@@ -1,5 +1,6 @@
 from telegram import Update
 from telegram.ext import CommandHandler, ContextTypes
+
 from db import SessionLocal, User
 
 
@@ -12,22 +13,39 @@ async def set_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         rate = float(context.args[0])
+        if rate <= 0:
+            raise ValueError
     except ValueError:
-        await update.message.reply_text("اكتب رقم صحيح")
+        await update.message.reply_text("اكتب رقم صحيح أكبر من 0")
         return
 
     db = SessionLocal()
-    user = db.query(User).filter(User.tg_user_id == uid).first()
+    try:
+        user = db.query(User).filter(User.tg_user_id == uid).first()
 
-    if not user:
-        user = User(tg_user_id=uid, is_active=True)
-        db.add(user)
+        # إذا المستخدم غير موجود ننشئه لكن بدون تفعيل الاشتراك
+        if not user:
+            user = User(tg_user_id=uid, is_active=False, is_blocked=False)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
-    user.usd_rate = rate
-    db.commit()
-    db.close()
+        # إذا محظور لا نسمح
+        if user.is_blocked:
+            await update.message.reply_text("🚫 أنت محظور من استخدام البوت.")
+            return
 
-    await update.message.reply_text("تم تحديث سعر الدولار بنجاح")
+        user.usd_rate = rate
+        db.commit()
+
+    except Exception:
+        # أي خطأ بقاعدة البيانات يعطي رد بدل الصمت
+        await update.message.reply_text("❌ صار خطأ أثناء حفظ السعر. جرّب مرة ثانية.")
+        return
+    finally:
+        db.close()
+
+    await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate}")
 
 
 def get_rate_handlers():
