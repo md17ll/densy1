@@ -4,10 +4,9 @@ from db import SessionLocal,User
 
 ADMIN_IDS={int(x) for x in os.getenv("ADMIN_IDS","").split(",") if x}
 
-def is_admin(uid): return uid in ADMIN_IDS
-
 async def sub(update,context):
-    if update.effective_user.id not in ADMIN_IDS: return
+    if update.effective_user.id not in ADMIN_IDS:
+        return
     uid=int(context.args[0])
     db=SessionLocal()
     u=db.query(User).filter(User.tg_user_id==uid).first()
