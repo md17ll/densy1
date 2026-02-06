@@ -22,7 +22,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL is missing")
 
-# psycopg2/sqlalchemy يحتاج postgresql:// بدل postgres://
+# SQLAlchemy + psycopg2 يحتاج postgresql://
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -50,7 +50,6 @@ class Person(Base):
     owner_user_id = Column(BigInteger, index=True, nullable=False)
     name = Column(String(255), nullable=False)
 
-    # ✅ هذا هو المهم لحل خطأ NOT NULL + TypeError
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
@@ -58,22 +57,27 @@ class Debt(Base):
     __tablename__ = "debts"
 
     id = Column(Integer, primary_key=True)
+
     owner_user_id = Column(BigInteger, index=True, nullable=False)
     person_id = Column(Integer, ForeignKey("people.id"), nullable=False)
 
     amount = Column(Numeric(18, 2), nullable=False)
     currency = Column(String(3), nullable=False)  # USD / SYP
+
     note = Column(Text, nullable=True)
+    due_date = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 def _ensure_schema():
     """
-    ترقيات بدون حذف بيانات:
+    ترقيات آمنة بدون حذف بيانات:
     - إضافة أعمدة ناقصة
-    - إصلاح أنواع Telegram IDs إلى BIGINT
-    - ضمان created_at للـ people (مع تعبئة null إذا موجود)
+    - تحويل Telegram IDs إلى BIGINT
+    - ضمان created_at NOT NULL
     - ضمان amount NUMERIC
+    - ضمان currency NOT NULL (لو كان موجود عمود بس فيه null)
     """
     with engine.begin() as conn:
         # users
@@ -82,43 +86,41 @@ def _ensure_schema():
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS usd_rate NUMERIC(18,2) DEFAULT 0"))
         conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
 
-        # people ✅
+        # people
         conn.execute(text("ALTER TABLE people ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
 
         # debts
         conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS currency VARCHAR(3)"))
         conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS note TEXT"))
+        conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS due_date TIMESTAMP"))
         conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
 
-        # ترقيات أنواع وأعمدة NOT NULL
+        # ترقيات أنواع + إصلاح NULLs
         conn.execute(text("""
 DO $$
 BEGIN
   -- users.tg_user_id -> bigint
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name='users' AND column_name='tg_user_id' AND data_type IN ('integer', 'int4')
+    WHERE table_name='users' AND column_name='tg_user_id' AND data_type IN ('integer','int4')
   ) THEN
-    ALTER TABLE users
-      ALTER COLUMN tg_user_id TYPE BIGINT USING tg_user_id::bigint;
+    ALTER TABLE users ALTER COLUMN tg_user_id TYPE BIGINT USING tg_user_id::bigint;
   END IF;
 
   -- people.owner_user_id -> bigint
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name='people' AND column_name='owner_user_id' AND data_type IN ('integer', 'int4')
+    WHERE table_name='people' AND column_name='owner_user_id' AND data_type IN ('integer','int4')
   ) THEN
-    ALTER TABLE people
-      ALTER COLUMN owner_user_id TYPE BIGINT USING owner_user_id::bigint;
+    ALTER TABLE people ALTER COLUMN owner_user_id TYPE BIGINT USING owner_user_id::bigint;
   END IF;
 
   -- debts.owner_user_id -> bigint
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
-    WHERE table_name='debts' AND column_name='owner_user_id' AND data_type IN ('integer', 'int4')
+    WHERE table_name='debts' AND column_name='owner_user_id' AND data_type IN ('integer','int4')
   ) THEN
-    ALTER TABLE debts
-      ALTER COLUMN owner_user_id TYPE BIGINT USING owner_user_id::bigint;
+    ALTER TABLE debts ALTER COLUMN owner_user_id TYPE BIGINT USING owner_user_id::bigint;
   END IF;
 
   -- debts.amount -> numeric(18,2)
@@ -126,11 +128,10 @@ BEGIN
     SELECT 1 FROM information_schema.columns
     WHERE table_name='debts' AND column_name='amount' AND data_type <> 'numeric'
   ) THEN
-    ALTER TABLE debts
-      ALTER COLUMN amount TYPE NUMERIC(18,2) USING amount::numeric;
+    ALTER TABLE debts ALTER COLUMN amount TYPE NUMERIC(18,2) USING amount::numeric;
   END IF;
 
-  -- people.created_at: تعبئة أي NULL ثم جعله NOT NULL (إذا كان عندك constraint)
+  -- people.created_at: تعبئة null ثم NOT NULL
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name='people' AND column_name='created_at'
@@ -139,7 +140,32 @@ BEGIN
     BEGIN
       ALTER TABLE people ALTER COLUMN created_at SET NOT NULL;
     EXCEPTION WHEN others THEN
-      -- إذا كانت الصلاحيات/القيود تمنع، نتجاهل بدون كراش
+      NULL;
+    END;
+  END IF;
+
+  -- debts.created_at: تعبئة null ثم NOT NULL
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='debts' AND column_name='created_at'
+  ) THEN
+    UPDATE debts SET created_at = NOW() WHERE created_at IS NULL;
+    BEGIN
+      ALTER TABLE debts ALTER COLUMN created_at SET NOT NULL;
+    EXCEPTION WHEN others THEN
+      NULL;
+    END;
+  END IF;
+
+  -- debts.currency: إذا العمود موجود وفيه NULL، عبّيه USD ثم حاول NOT NULL
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='debts' AND column_name='currency'
+  ) THEN
+    UPDATE debts SET currency='USD' WHERE currency IS NULL;
+    BEGIN
+      ALTER TABLE debts ALTER COLUMN currency SET NOT NULL;
+    EXCEPTION WHEN others THEN
       NULL;
     END;
   END IF;
