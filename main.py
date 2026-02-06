@@ -120,6 +120,22 @@ def check_access(tg_user_id: int) -> tuple[bool, str]:
     return True, ""
 
 
+def build_main_keyboard(tg_user_id: int) -> InlineKeyboardMarkup:
+    # الأزرار الأساسية
+    rows = [
+        [InlineKeyboardButton("➕ إضافة دين", callback_data="add_debt")],
+        [InlineKeyboardButton("📋 قائمة الديون", callback_data="list_debts")],
+        [InlineKeyboardButton("📊 الملخص", callback_data="summary")],
+        [InlineKeyboardButton("❓ المساعدة", callback_data="help")],
+    ]
+
+    # ✅ زر المشرف يظهر فقط للأدمن
+    if is_admin(tg_user_id):
+        rows.append([InlineKeyboardButton("👑 لوحة المشرف", callback_data="admin_panel")])
+
+    return InlineKeyboardMarkup(rows)
+
+
 # -----------------------
 # User Commands
 # -----------------------
@@ -134,14 +150,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(msg, reply_markup=kb)
         return
 
+    kb = build_main_keyboard(tg_id)
+
     await update.message.reply_text(
         "✅ أهلاً بك في بوت الديون (Premium)\n\n"
-        "القائمة الرئيسية (قريبًا بالأزرار):\n"
-        "➕ إضافة دين\n"
-        "📋 قائمة الديون\n"
-        "📊 الملخص\n"
-        "❓ المساعدة\n\n"
-        "جرّب /help"
+        "اختر من القائمة:",
+        reply_markup=kb
     )
 
 
@@ -159,13 +173,10 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "يسجل ديون الأشخاص بعملتين (USD / SYP) ويعرض إجمالي كل عملة مع تحويل تقريبي حسب سعر الدولار اليوم.\n\n"
         "🧾 الأوامر:\n"
         "/start - تشغيل البوت\n"
-        "/add - إضافة دين (قريبًا)\n"
-        "/list - قائمة الديون (قريبًا)\n"
-        "/summary - الملخص (قريبًا)\n"
-        "/rate - سعر الدولار اليوم (قريبًا)\n"
-        "/export - تصدير CSV/Excel (قريبًا)\n"
-        "/pin - حماية PIN (قريبًا)\n"
         "/help - المساعدة\n"
+        "/myid - عرض آيديك\n\n"
+        "أوامر الأدمن:\n"
+        "/admin /sub /unsub /ban /unban /who\n"
     )
 
 
@@ -318,6 +329,7 @@ def main():
     app.add_handler(CommandHandler("unban", unban_cmd))
     app.add_handler(CommandHandler("who", who_cmd))
 
+    # ملاحظة: سنضيف CallbackQueryHandler لاحقًا لما نبدأ بواجهة الأزرار الفعلية
     app.run_polling()
 
 
