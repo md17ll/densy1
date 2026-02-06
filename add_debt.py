@@ -1,25 +1,24 @@
 from telegram.ext import *
-from telegram import Update
-from db import SessionLocal, Person, Debt
+from db import SessionLocal,Person,Debt
 
 ASK_NAME,ASK_AMOUNT=range(2)
 
-async def add_start(update:Update,context):
+async def add_start(update,context):
     await update.message.reply_text("اسم الشخص:")
     return ASK_NAME
 
-async def ask_amount(update:Update,context):
+async def ask_amount(update,context):
     context.user_data["name"]=update.message.text
     await update.message.reply_text("المبلغ:")
     return ASK_AMOUNT
 
-async def save(update:Update,context):
+async def save(update,context):
     db=SessionLocal()
     p=Person(owner_user_id=update.effective_user.id,name=context.user_data["name"])
     db.add(p); db.commit(); db.refresh(p)
-    d=Debt(owner_user_id=update.effective_user.id,person_id=p.id,amount=update.message.text)
+    d=Debt(owner_user_id=update.effective_user.id,person_id=p.id,amount=update.message.text,currency="USD")
     db.add(d); db.commit(); db.close()
-    await update.message.reply_text("تم الحفظ")
+    await update.message.reply_text("تمت الإضافة")
     return ConversationHandler.END
 
 def get_add_debt_handler():
