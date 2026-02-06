@@ -32,7 +32,7 @@ def get_or_create_user(db, uid: int) -> User:
     if not user:
         user = User(
             tg_user_id=uid,
-            is_active=is_admin(uid),
+            is_active=is_admin(uid),   # الأدمن يتفعل مباشرة
             is_blocked=False,
         )
         db.add(user)
@@ -63,10 +63,10 @@ def main_menu(uid: int) -> InlineKeyboardMarkup:
     rows = [
         [InlineKeyboardButton("➕ إضافة دين", callback_data="add")],
         [InlineKeyboardButton("👥 الأشخاص", callback_data="people")],
-        [InlineKeyboardButton("🔎 بحث عن شخص", callback_data="search")],
         [InlineKeyboardButton("💱 سعر الدولار", callback_data="rate")],
         [InlineKeyboardButton("❓ المساعدة", callback_data="help")],
     ]
+    # ✅ لا نشيل زر المشرف أبداً
     if is_admin(uid):
         rows.append([InlineKeyboardButton("👑 لوحة المشرف", callback_data="admin")])
     return InlineKeyboardMarkup(rows)
@@ -80,19 +80,16 @@ PAID_MSG = (
 
 HELP_TEXT = (
     "## ❓ المساعدة — بوت الديون (Premium)\n\n"
-    "**هذا البوت لإدارة الديون بشكل منظم (دفتر ديون احترافي).**\n"
-    "يدعم عملتين: **USD** و **SYP**، وكل دين يُسجَّل **بعملة واحدة** تختارها أثناء الإضافة.\n\n"
-    "### 💱 سعر الدولار اليوم\n"
-    "- من الزر **💱 سعر الدولار** (محادثة مباشرة)\n"
-    "- أو بالأمر: `/rate 15000`\n\n"
+    "**بوت لإدارة الديون بشكل منظم**\n"
+    "يدعم عملتين: **USD** و **SYP**\n\n"
     "### ➕ إضافة دين\n"
-    "- من الزر **➕ إضافة دين** (محادثة مباشرة)\n"
+    "- من الزر ➕ إضافة دين\n"
     "- أو بالأمر: `/add`\n\n"
-    "### 👥 الأشخاص\n"
-    "- زر الأشخاص يعرض قائمة أشخاص\n"
-    "- اضغط على اسم أي شخص لعرض ديونه\n\n"
-    "### 🔎 البحث\n"
-    "- من زر **بحث عن شخص** أو الأمر: `/search`\n\n"
+    "### 💱 سعر الدولار\n"
+    "- من الزر 💱 سعر الدولار\n"
+    "- أو بالأمر: `/rate 15000`\n\n"
+    "### 👨‍💼 الأوامر\n"
+    "/start\n/add\n/people\n/rate\n/help\n"
 )
 
 # ---------------------------
@@ -208,9 +205,7 @@ async def add_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.commit()
 
         await update.message.reply_text(
-            f"✅ تمت إضافة الدين بنجاح:\n"
-            f"👤 {name}\n"
-            f"💰 {amount:g} {currency}",
+            f"✅ تمت إضافة الدين بنجاح:\n👤 {name}\n💰 {amount} {currency}",
             reply_markup=main_menu(uid),
         )
         return ConversationHandler.END
@@ -221,6 +216,11 @@ async def add_save(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ConversationHandler.END
     finally:
         db.close()
+
+
+async def add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text("❎ تم إلغاء العملية.", reply_markup=main_menu(update.effective_user.id))
+    return ConversationHandler.END
 
 
 def build_add_conversation() -> ConversationHandler:
@@ -234,9 +234,9 @@ def build_add_conversation() -> ConversationHandler:
             ADD_CURRENCY: [CallbackQueryHandler(add_set_currency, pattern=r"^add_currency_(USD|SYP)$")],
             ADD_AMOUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, add_save)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", add_cancel)],
         allow_reentry=True,
-        per_message=True,
+        per_message=False,   # ✅ مهم جداً
     )
 
 # ---------------------------
@@ -289,7 +289,7 @@ async def rate_save_msg(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_or_create_user(db, uid)
         user.usd_rate = rate
         db.commit()
-        await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate:g}")
+        await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate}", reply_markup=main_menu(uid))
         return ConversationHandler.END
     except Exception:
         db.rollback()
@@ -322,7 +322,7 @@ async def rate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = get_or_create_user(db, uid)
         user.usd_rate = rate
         db.commit()
-        await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate:g}")
+        await update.message.reply_text(f"✅ تم تحديث سعر الدولار إلى: {rate}", reply_markup=main_menu(uid))
     except Exception:
         db.rollback()
         await update.message.reply_text("❌ صار خطأ أثناء حفظ السعر. جرّب مرة ثانية.")
@@ -330,18 +330,23 @@ async def rate_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.close()
 
 
+async def rate_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.effective_message.reply_text("❎ تم إلغاء العملية.", reply_markup=main_menu(update.effective_user.id))
+    return ConversationHandler.END
+
+
 def build_rate_conversation() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
-            CommandHandler("rate", rate_start),
             CallbackQueryHandler(rate_start_cb, pattern=r"^rate$"),
+            CommandHandler("rate", rate_start),  # /rate بدون رقم يفتح محادثة
         ],
         states={
             RATE_WAIT: [MessageHandler(filters.TEXT & ~filters.COMMAND, rate_save_msg)],
         },
-        fallbacks=[],
+        fallbacks=[CommandHandler("cancel", rate_cancel)],
         allow_reentry=True,
-        per_message=True,
+        per_message=False,   # ✅ مهم جداً
     )
 
 # ---------------------------
@@ -378,7 +383,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
     uid = query.from_user.id
     data = query.data
 
@@ -386,12 +390,10 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.reply_text(PAID_MSG)
         return
 
-    # ⚠️ ملاحظة مهمة:
-    # "add" و "rate" ماسكينهم ConversationHandler
-    # "people/search/person_..." ماسكينهم handlers/people.py
-    # هون نخلي فقط: help/admin/back
+    if data == "people":
+        await list_people(update, context)
 
-    if data == "help":
+    elif data == "help":
         await query.message.reply_text(HELP_TEXT, parse_mode=ParseMode.MARKDOWN)
 
     elif data == "admin":
@@ -415,23 +417,6 @@ async def buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "back":
         await query.message.reply_text("القائمة الرئيسية:", reply_markup=main_menu(uid))
 
-    elif data == "admin_sub":
-        await query.message.reply_text("اكتب:\n/sub USER_ID DAYS\nمثال:\n/sub 123456 30")
-    elif data == "admin_extend":
-        await query.message.reply_text("اكتب:\n/extend USER_ID DAYS\nمثال:\n/extend 123456 30")
-    elif data == "admin_cancel":
-        await query.message.reply_text("اكتب:\n/cancel USER_ID\nمثال:\n/cancel 123456")
-    elif data == "admin_ban":
-        await query.message.reply_text("اكتب:\n/ban USER_ID\nمثال:\n/ban 123456")
-    elif data == "admin_unban":
-        await query.message.reply_text("اكتب:\n/unban USER_ID\nمثال:\n/unban 123456")
-    elif data == "admin_broadcast":
-        await query.message.reply_text("اكتب:\n/broadcast نص الرسالة")
-    elif data == "admin_subscribers":
-        await query.message.reply_text("اكتب:\n/subscribers")
-    elif data == "admin_stats":
-        await query.message.reply_text("اكتب:\n/stats")
-
 
 def main():
     init_db()
@@ -439,28 +424,28 @@ def main():
     app = Application.builder().token(TOKEN).build()
     app.bot_data["ADMIN_IDS"] = list(ADMIN_IDS)
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
+    # أوامر عامة
+    app.add_handler(CommandHandler("start", start), group=0)
+    app.add_handler(CommandHandler("help", help_cmd), group=0)
 
-    # /rate رقم يبقى شغال
-    app.add_handler(CommandHandler("rate", rate_cmd))
+    # /rate مع رقم يبقى شغال
+    app.add_handler(CommandHandler("rate", rate_cmd), group=0)
 
-    # محادثات (قبل buttons)
-    app.add_handler(build_add_conversation())
-    app.add_handler(build_rate_conversation())
+    # ✅ المحادثات أولاً وبـ group=0
+    app.add_handler(build_add_conversation(), group=0)
+    app.add_handler(build_rate_conversation(), group=0)
 
-    # هاندلرز الأشخاص + البحث (قبل buttons)
+    # ✅ أزرار عامة بعدهم
+    app.add_handler(CallbackQueryHandler(buttons), group=1)
+
+    # ✅ باقي الهاندلرز بعدهم (حتى ما يسرقوا رسالة الاسم)
     for h in get_people_handlers():
-        app.add_handler(h)
+        app.add_handler(h, group=2)
 
-    # الأزرار العامة
-    app.add_handler(CallbackQueryHandler(buttons))
-
-    # الأدمن
     for h in get_admin_handlers():
-        app.add_handler(h)
+        app.add_handler(h, group=2)
 
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
