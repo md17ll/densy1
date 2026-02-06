@@ -1,5 +1,4 @@
 from decimal import Decimal, InvalidOperation
-from datetime import datetime
 
 from telegram import Update
 from telegram.ext import (
@@ -81,17 +80,11 @@ async def save_debt(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     db = SessionLocal()
     try:
-        # ✅ إنشاء شخص مع created_at حتى لا يحدث NotNullViolation
-        person = Person(
-            owner_user_id=uid,
-            name=name,
-            created_at=datetime.utcnow(),
-        )
+        person = Person(owner_user_id=uid, name=name)  # created_at default
         db.add(person)
         db.commit()
         db.refresh(person)
 
-        # إنشاء دين
         debt = Debt(
             owner_user_id=uid,
             person_id=person.id,
