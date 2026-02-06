@@ -11,6 +11,7 @@ from sqlalchemy import (
     Float,
     DateTime,
     ForeignKey,
+    func,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
@@ -44,19 +45,16 @@ def _now():
 class User(Base):
     __tablename__ = "users"
 
-    # Telegram ID كبير -> لازم BigInteger
     tg_user_id = Column(BigInteger, primary_key=True, index=True)
 
     is_active = Column(Boolean, default=False, nullable=False)
     is_blocked = Column(Boolean, default=False, nullable=False)
 
     usd_rate = Column(Float, nullable=True)
-
-    # انتهاء الاشتراك (اختياري)
     sub_expires_at = Column(DateTime(timezone=False), nullable=True)
 
-    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
-    updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    # ملاحظة: جدول users عندك ما فيه updated_at (حسب اللوج)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
     people = relationship("Person", back_populates="owner", cascade="all, delete-orphan")
     debts = relationship("Debt", back_populates="owner", cascade="all, delete-orphan")
@@ -75,8 +73,8 @@ class Person(Base):
     )
     name = Column(String(120), nullable=False)
 
-    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
-    updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    # ملاحظة: جدول people عندك يطلب created_at (كان يطلع NOT NULL)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
     owner = relationship("User", back_populates="people")
     debts = relationship("Debt", back_populates="person", cascade="all, delete-orphan")
@@ -103,10 +101,11 @@ class Debt(Base):
     amount = Column(Float, nullable=False)
     currency = Column(String(3), nullable=False)  # USD / SYP
 
-    # مهم جداً: بعض قواعدك القديمة فيها status NOT NULL
-    status = Column(String(20), default="open", nullable=False)  # open / paid / partial ...
+    # كان عندك خطأ: status NOT NULL
+    status = Column(String(20), default="open", nullable=False)
 
-    created_at = Column(DateTime(timezone=False), default=_now, nullable=False)
+    # كان عندك خطأ: updated_at NOT NULL
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=False), default=_now, nullable=False)
 
     owner = relationship("User", back_populates="debts")
