@@ -6,7 +6,6 @@ from db import SessionLocal, User
 async def set_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     uid = update.effective_user.id
 
-    # تحقق من وجود رقم
     if len(context.args) != 1:
         await update.message.reply_text("الاستخدام:\n/rate 15000")
         return
@@ -35,4 +34,3 @@ def get_rate_handlers():
     return [
         CommandHandler("rate", set_rate),
     ]
-```0
