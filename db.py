@@ -11,12 +11,16 @@ from sqlalchemy import (
     Numeric,
     ForeignKey,
     Text,
+    text,
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is missing")
+
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
@@ -58,5 +62,24 @@ class Debt(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+def _ensure_schema():
+    """
+    ترقيات بسيطة للجداول الموجودة (بدون حذف بيانات)
+    لأن create_all لا يضيف أعمدة جديدة للجداول القديمة.
+    """
+    with engine.begin() as conn:
+        # users
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS usd_rate NUMERIC(18,2) DEFAULT 0"))
+        conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
+
+        # debts
+        conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS currency VARCHAR(3)"))
+        conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS note TEXT"))
+        conn.execute(text("ALTER TABLE debts ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()"))
+
+
 def init_db():
     Base.metadata.create_all(bind=engine)
+    _ensure_schema()
