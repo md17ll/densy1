@@ -1,7 +1,6 @@
 import os
-from datetime import datetime
-from sqlalchemy import create_engine, Column, Integer, BigInteger, String, Boolean, DateTime, Numeric
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import create_engine,Column,Integer,BigInteger,String,Boolean,Numeric
+from sqlalchemy.orm import declarative_base,sessionmaker
 
 Base=declarative_base()
 
@@ -14,6 +13,7 @@ class User(Base):
     id=Column(Integer,primary_key=True)
     tg_user_id=Column(BigInteger,unique=True)
     is_active=Column(Boolean,default=False)
+    usd_rate=Column(Numeric,default=0)
 
 class Person(Base):
     __tablename__="people"
@@ -27,6 +27,7 @@ class Debt(Base):
     owner_user_id=Column(BigInteger)
     person_id=Column(Integer)
     amount=Column(Numeric)
+    currency=Column(String)
 
 def init_db():
     Base.metadata.create_all(engine)
