@@ -1,15 +1,33 @@
-from telegram.ext import CommandHandler
-from db import SessionLocal,User
+from telegram import Update
+from telegram.ext import CommandHandler, ContextTypes
 
-async def set_rate(update,context):
-    rate=context.args[0]
-    db=SessionLocal()
-    u=db.query(User).filter(User.tg_user_id==update.effective_user.id).first()
-    if u:
-        u.usd_rate=rate
-        db.commit()
+from db import SessionLocal, User
+
+
+async def set_rate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    uid = update.effective_user.id
+
+    if len(context.args) != 1:
+        await update.message.reply_text("الاستخدام: /rate 15000")
+        return
+
+    rate = context.args[0]
+
+    db = SessionLocal()
+    user = db.query(User).filter(User.tg_user_id == uid).first()
+
+    if not user:
+        user = User(tg_user_id=uid, is_active=True)
+        db.add(user)
+
+    user.usd_rate = rate
+    db.commit()
     db.close()
-    await update.message.reply_text("تم تحديث السعر")
+
+    await update.message.reply_text("تم تحديث سعر الدولار الخاص بك")
+
 
 def get_rate_handlers():
-    return [CommandHandler("rate",set_rate)]
+    return [
+        CommandHandler("rate", set_rate),
+    ]
