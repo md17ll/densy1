@@ -1,10 +1,10 @@
 import os
-from datetime import datetime, date
+from datetime import datetime
 from sqlalchemy import (
     create_engine, Column, Integer, BigInteger, String, Boolean,
-    DateTime, Date, Numeric, ForeignKey, Index, UniqueConstraint, Text
+    DateTime, Date, Numeric, UniqueConstraint, Text
 )
-from sqlalchemy.orm import declarative_base, relationship, sessionmaker
+from sqlalchemy.orm import declarative_base, sessionmaker
 
 Base = declarative_base()
 
@@ -19,11 +19,8 @@ if not DATABASE_URL:
 
 DATABASE_URL = _normalize_db_url(DATABASE_URL)
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,
-    connect_args={"sslmode": "require"},
-)
+# ملاحظة: Railway أحيانًا يضيف sslmode داخل الرابط. لا نكسره.
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 class User(Base):
@@ -51,9 +48,9 @@ class Debt(Base):
     id = Column(Integer, primary_key=True)
     owner_user_id = Column(BigInteger, nullable=False, index=True)
     person_id = Column(Integer, nullable=False, index=True)
-    amount = Column(Numeric(18, 2), nullable=False)
-    currency = Column(String(3), nullable=False)  # USD / SYP
-    due_date = Column(Date, nullable=True)
+    amount = Column(Numeric(18, 2), nullable=False)  # لازم Decimal/رقم
+    currency = Column(String(3), nullable=False)     # USD / SYP
+    due_date = Column(Date, nullable=True)           # لازم date
     note = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
